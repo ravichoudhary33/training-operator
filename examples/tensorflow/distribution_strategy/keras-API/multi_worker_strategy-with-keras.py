@@ -19,24 +19,62 @@ from __future__ import absolute_import, division, print_function
 import argparse
 import json
 import os
+import sys
 
 import tensorflow_datasets as tfds
 import tensorflow as tf
 from tensorflow.keras import layers, models
 
+import numpy as np
+from tensorflow import keras
+from tensorflow.keras import layers
+
+# Model / data parameters
+num_classes = 10
+input_shape = (28, 28, 1)
 
 def make_datasets_unbatched():
   BUFFER_SIZE = 10000
 
   # Scaling MNIST data from (0, 255] to (0., 1.]
-  def scale(image, label):
-    image = tf.cast(image, tf.float32)
-    image /= 255
-    return image, label
+  # def scale(image, label):
+  #   image = tf.cast(image, tf.float32)
+  #   image /= 255
+  #   return image, label
 
-  datasets, _ = tfds.load(name='mnist', with_info=True, as_supervised=True)
+  # datasets, _ = tfds.load(name='mnist', with_info=True, as_supervised=True)
 
-  return datasets['train'].map(scale).cache().shuffle(BUFFER_SIZE)
+  # return datasets['train'].map(scale).cache().shuffle(BUFFER_SIZE)
+
+  # the data, split between train and test sets
+  # (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
+
+  x_train = np.load('x_train.npy')
+  y_train = np.load('y_train.npy')
+
+  x_test = np.load('x_test.npy')
+  y_test = np.load('y_test.npy')
+
+  # Scale images to the [0, 1] range
+  x_train = x_train.astype("float32") / 255
+  x_test = x_test.astype("float32") / 255
+  # Make sure images have shape (28, 28, 1)
+  x_train = np.expand_dims(x_train, -1)
+  x_test = np.expand_dims(x_test, -1)
+  print("x_train shape:", x_train.shape)
+  print(x_train.shape[0], "train samples")
+  print(x_test.shape[0], "test samples")
+
+
+  # convert class vectors to binary class matrices
+  y_train = keras.utils.to_categorical(y_train, num_classes)
+  y_test = keras.utils.to_categorical(y_test, num_classes)
+
+  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+  test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
+
+  return train_dataset.cache().shuffle(BUFFER_SIZE)
+
 
 
 def build_and_compile_cnn_model():
@@ -54,7 +92,7 @@ def build_and_compile_cnn_model():
   model.summary()
 
   model.compile(optimizer='adam',
-                loss='sparse_categorical_crossentropy',
+                loss='categorical_crossentropy',
                 metrics=['accuracy'])
 
   return model
@@ -73,11 +111,18 @@ def main(args):
   # MultiWorkerMirroredStrategy creates copies of all variables in the model's
   # layers on each device across all workers
   # if your GPUs don't support NCCL, replace "communication" with another
-  strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy(
-      communication=tf.distribute.experimental.CollectiveCommunication.NCCL)
+  # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy(
+  #     communication=tf.distribute.experimental.CollectiveCommunication.NCCL)
+
+  strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
   BATCH_SIZE_PER_REPLICA = 64
   BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
+
+  # BATCH_SIZE = 64
+
+  # ds_train = make_datasets_unbatched().batch(BATCH_SIZE)
+  # multi_worker_model = build_and_compile_cnn_model()
 
   with strategy.scope():
     ds_train = make_datasets_unbatched().batch(BATCH_SIZE).repeat()
@@ -124,26 +169,41 @@ def main(args):
   # current task type and returns True if the worker is the chief and False
   # otherwise.
   def is_chief():
-    return TASK_INDEX == 0
+    # return TASK_INDEX == 0
+    return TASK_TYPE == 'chief'
 
   if is_chief():
     model_path = args.saved_model_dir
 
   else:
     # Save to a path that is unique across workers.
-    model_path = args.saved_model_dir + '/worker_tmp_' + str(TASK_INDEX)
+    model_path = args.saved_model_dir + f'/{TASK_TYPE}_tmp_' + str(TASK_INDEX)
 
+  # model_path = args.saved_model_dir
+  print(f'saving model to {model_path}')
   multi_worker_model.save(model_path)
+  print('code executed successfully!')
 
 
 if __name__ == '__main__':
-  os.environ['NCCL_DEBUG'] = 'INFO'
-
+  # os.environ['NCCL_DEBUG'] = 'INFO'
   tfds.disable_progress_bar()
+
+  # tf_config = {
+  #     'cluster': {
+  #         'worker': ['localhost:12345', 'localhost:23456']
+  #     },
+  #     'task': {'type': 'worker', 'index': 0}
+  # }
+  # os.environ['TF_CONFIG'] = json.dumps(tf_config)
+
 
   # to decide if a worker is chief, get TASK_INDEX in Cluster info
   tf_config = json.loads(os.environ.get('TF_CONFIG') or '{}')
+  print(f'tf_config:-\n{tf_config}')
   TASK_INDEX = tf_config['task']['index']
+  TASK_TYPE = tf_config['task']['type']
+
 
   parser = argparse.ArgumentParser()
   parser.add_argument('--saved_model_dir',
