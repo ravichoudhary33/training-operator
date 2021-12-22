@@ -33,188 +33,289 @@ from tensorflow.keras import layers
 num_classes = 10
 input_shape = (28, 28, 1)
 
+
 def make_datasets_unbatched():
-  BUFFER_SIZE = 10000
+    BUFFER_SIZE = 10000
 
-  # Scaling MNIST data from (0, 255] to (0., 1.]
-  # def scale(image, label):
-  #   image = tf.cast(image, tf.float32)
-  #   image /= 255
-  #   return image, label
+    # Scaling MNIST data from (0, 255] to (0., 1.]
+    # def scale(image, label):
+    #   image = tf.cast(image, tf.float32)
+    #   image /= 255
+    #   return image, label
 
-  # datasets, _ = tfds.load(name='mnist', with_info=True, as_supervised=True)
+    # datasets, _ = tfds.load(name='mnist', with_info=True, as_supervised=True)
 
-  # return datasets['train'].map(scale).cache().shuffle(BUFFER_SIZE)
+    # return datasets['train'].map(scale).cache().shuffle(BUFFER_SIZE)
 
-  # the data, split between train and test sets
-  # (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
+    # the data, split between train and test sets
+    # (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
 
-  x_train = np.load('x_train.npy')
-  y_train = np.load('y_train.npy')
+    x_train = np.load('x_train.npy')
+    y_train = np.load('y_train.npy')
 
-  x_test = np.load('x_test.npy')
-  y_test = np.load('y_test.npy')
+    x_test = np.load('x_test.npy')
+    y_test = np.load('y_test.npy')
 
-  # Scale images to the [0, 1] range
-  x_train = x_train.astype("float32") / 255
-  x_test = x_test.astype("float32") / 255
-  # Make sure images have shape (28, 28, 1)
-  x_train = np.expand_dims(x_train, -1)
-  x_test = np.expand_dims(x_test, -1)
-  print("x_train shape:", x_train.shape)
-  print(x_train.shape[0], "train samples")
-  print(x_test.shape[0], "test samples")
+    # Scale images to the [0, 1] range
+    x_train = x_train.astype("float32") / 255
+    x_test = x_test.astype("float32") / 255
+    # Make sure images have shape (28, 28, 1)
+    x_train = np.expand_dims(x_train, -1)
+    x_test = np.expand_dims(x_test, -1)
+    print("x_train shape:", x_train.shape)
+    print("x_test shape:", x_test.shape)
+    print(x_train.shape[0], "train samples")
+    print(x_test.shape[0], "test samples")
 
+    # convert class vectors to binary class matrices
+    y_train = keras.utils.to_categorical(y_train, num_classes)
+    y_test = keras.utils.to_categorical(y_test, num_classes)
 
-  # convert class vectors to binary class matrices
-  y_train = keras.utils.to_categorical(y_train, num_classes)
-  y_test = keras.utils.to_categorical(y_test, num_classes)
+    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+    test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
 
-  train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-  test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
+    train_dataset = train_dataset.cache().shuffle(BUFFER_SIZE)
+    test_dataset = test_dataset.cache().shuffle(BUFFER_SIZE)
 
-  return train_dataset.cache().shuffle(BUFFER_SIZE)
-
+    # return train_dataset
+    return train_dataset, test_dataset
 
 
 def build_and_compile_cnn_model():
-  model = models.Sequential()
-  model.add(
-      layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)))
-  model.add(layers.MaxPooling2D((2, 2)))
-  model.add(layers.Conv2D(64, (3, 3), activation='relu'))
-  model.add(layers.MaxPooling2D((2, 2)))
-  model.add(layers.Conv2D(64, (3, 3), activation='relu'))
-  model.add(layers.Flatten())
-  model.add(layers.Dense(64, activation='relu'))
-  model.add(layers.Dense(10, activation='softmax'))
+    model = models.Sequential()
+    model.add(
+        layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+    model.add(layers.Flatten())
+    model.add(layers.Dense(64, activation='relu'))
+    model.add(layers.Dense(10, activation='softmax'))
 
-  model.summary()
+    model.summary()
 
-  model.compile(optimizer='adam',
-                loss='categorical_crossentropy',
-                metrics=['accuracy'])
+    model.compile(optimizer='adam',
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
 
-  return model
+    return model
 
 
 def decay(epoch):
-  if epoch < 3: #pylint: disable=no-else-return
-    return 1e-3
-  if 3 <= epoch < 7:
-    return 1e-4
-  return 1e-5
+    if epoch < 3:  # pylint: disable=no-else-return
+        return 1e-3
+    if 3 <= epoch < 7:
+        return 1e-4
+    return 1e-5
 
 
 def main(args):
 
-  # MultiWorkerMirroredStrategy creates copies of all variables in the model's
-  # layers on each device across all workers
-  # if your GPUs don't support NCCL, replace "communication" with another
-  # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy(
-  #     communication=tf.distribute.experimental.CollectiveCommunication.NCCL)
+    # MultiWorkerMirroredStrategy creates copies of all variables in the model's
+    # layers on each device across all workers
+    # if your GPUs don't support NCCL, replace "communication" with another
+    # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy(
+    #     communication=tf.distribute.experimental.CollectiveCommunication.NCCL)
 
-  strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+    strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
-  BATCH_SIZE_PER_REPLICA = 64
-  BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
+    BATCH_SIZE_PER_REPLICA = 64
+    BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
 
-  # BATCH_SIZE = 64
+    # BATCH_SIZE = 64
 
-  # ds_train = make_datasets_unbatched().batch(BATCH_SIZE)
-  # multi_worker_model = build_and_compile_cnn_model()
+    # ds_train = make_datasets_unbatched().batch(BATCH_SIZE)
+    # multi_worker_model = build_and_compile_cnn_model()
 
-  with strategy.scope():
-    ds_train = make_datasets_unbatched().batch(BATCH_SIZE).repeat()
-    options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = \
-        tf.data.experimental.AutoShardPolicy.DATA
-    ds_train = ds_train.with_options(options)
-    # Model building/compiling need to be within `strategy.scope()`.
-    multi_worker_model = build_and_compile_cnn_model()
+    ds_train, ds_test = make_datasets_unbatched()
 
-  # Define the checkpoint directory to store the checkpoints
-  checkpoint_dir = args.checkpoint_dir
 
-  # Name of the checkpoint files
-  checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
+    if TRAIN:
+      print('Training and saving the model:-')
+      with strategy.scope():
+          # ds_train = make_datasets_unbatched().batch(BATCH_SIZE).repeat()
+          ds_train = ds_train.batch(BATCH_SIZE).repeat()
+          # ds_test = ds_test.batch(BATCH_SIZE).repeat()
 
-  # Function for decaying the learning rate.
-  # You can define any decay function you need.
-  # Callback for printing the LR at the end of each epoch.
-  class PrintLR(tf.keras.callbacks.Callback):
+          options = tf.data.Options()
+          options.experimental_distribute.auto_shard_policy = \
+              tf.data.experimental.AutoShardPolicy.DATA
+          ds_train = ds_train.with_options(options)
+          # ds_test = ds_test.with_options(options)
+          # Model building/compiling need to be within `strategy.scope()`.
+          multi_worker_model = build_and_compile_cnn_model()
 
-    def on_epoch_end(self, epoch, logs=None): #pylint: disable=no-self-use
-      print('\nLearning rate for epoch {} is {}'.format(
-        epoch + 1, multi_worker_model.optimizer.lr.numpy()))
+      # Define the checkpoint directory to store the checkpoints
+      checkpoint_dir = args.checkpoint_dir
 
-  callbacks = [
-      tf.keras.callbacks.TensorBoard(log_dir='./logs'),
-      tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_prefix,
-                                         save_weights_only=True),
-      tf.keras.callbacks.LearningRateScheduler(decay),
-      PrintLR()
-  ]
+      # Name of the checkpoint files
+      checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
 
-  # Keras' `model.fit()` trains the model with specified number of epochs and
-  # number of steps per epoch. Note that the numbers here are for demonstration
-  # purposes only and may not sufficiently produce a model with good quality.
-  multi_worker_model.fit(ds_train,
-                         epochs=10,
-                         steps_per_epoch=70,
-                         callbacks=callbacks)
+      # Function for decaying the learning rate.
+      # You can define any decay function you need.
+      # Callback for printing the LR at the end of each epoch.
+      class PrintLR(tf.keras.callbacks.Callback):
 
-  # Saving a model
-  # Let `is_chief` be a utility function that inspects the cluster spec and
-  # current task type and returns True if the worker is the chief and False
-  # otherwise.
-  def is_chief():
-    # return TASK_INDEX == 0
-    return TASK_TYPE == 'chief'
+          def on_epoch_end(self, epoch, logs=None):  # pylint: disable=no-self-use
+              print('\nLearning rate for epoch {} is {}'.format(
+                  epoch + 1, multi_worker_model.optimizer.lr.numpy()))
 
-  if is_chief():
-    model_path = args.saved_model_dir
+      callbacks = [
+          tf.keras.callbacks.TensorBoard(log_dir='./logs'),
+          tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_prefix,
+                                            save_weights_only=True),
+          tf.keras.callbacks.LearningRateScheduler(decay),
+          PrintLR()
+      ]
 
-  else:
-    # Save to a path that is unique across workers.
-    model_path = args.saved_model_dir + f'/{TASK_TYPE}_tmp_' + str(TASK_INDEX)
+      # Keras' `model.fit()` trains the model with specified number of epochs and
+      # number of steps per epoch. Note that the numbers here are for demonstration
+      # purposes only and may not sufficiently produce a model with good quality.
+      multi_worker_model.fit(ds_train,
+                            epochs=10,
+                            steps_per_epoch=70,
+                            callbacks=callbacks)
 
-  # model_path = args.saved_model_dir
-  print(f'saving model to {model_path}')
-  multi_worker_model.save(model_path)
-  print('code executed successfully!')
+      # Saving a model
+      # Let `is_chief` be a utility function that inspects the cluster spec and
+      # current task type and returns True if the worker is the chief and False
+      # otherwise.
+      def is_chief():
+          # return TASK_INDEX == 0
+          return TASK_TYPE == 'chief'
+
+      if is_chief():
+          model_path = args.saved_model_dir
+
+      else:
+          # Save to a path that is unique across workers.
+          model_path = args.saved_model_dir + f'/{TASK_TYPE}_tmp_' + str(TASK_INDEX)
+
+      # model_path = args.saved_model_dir
+      print(f'saving model to {model_path}')
+      multi_worker_model.save(model_path)
+      # tf.saved_model.save(multi_worker_model, model_path)
+
+    # if is_chief():
+    # load the model using mirrored strategy only in chief
+    # another_strategy = tf.distribute.MirroredStrategy()
+    # DEFAULT_FUNCTION_KEY = "serving_default"
+
+    # restored_keras_model = tf.keras.models.load_model(args.saved_model_dir)
+    # eval_loss, eval_acc = restored_keras_model.evaluate(ds_test)
+    # eval_loss, eval_acc = multi_worker_model.evaluate(ds_test, steps=70)
+    # print('Eval loss: {}, Eval accuracy: {}'.format(eval_loss, eval_acc))
+
+    if EVAL:
+      with strategy.scope():
+        print('Evaluating on saved_model with multiworker strategy...')
+        
+        ds_test = ds_test.batch(BATCH_SIZE)
+
+        # apply repeat on ds_test
+        # ds_test = ds_test.batch(BATCH_SIZE).repeat()
+        # define options
+        # options = tf.data.Options()
+        # options.experimental_distribute.auto_shard_policy = \
+        #     tf.data.experimental.AutoShardPolicy.DATA
+        # # apply options on ds_test
+        # ds_test = ds_test.with_options(options)
+
+        # get the replicated_model from saved_model_dir
+        replicated_model = tf.keras.models.load_model(args.saved_model_dir)
+        print(f'model loaded successfully:- {replicated_model}')
+        # replicated_model.compile(optimizer='adam',
+        #                           loss='categorical_crossentropy',
+        #                           metrics=['accuracy'])
+
+        print(f'loaded model not needed to be compiled for evaluation, evaluating now...')
+        # eval_loss, eval_acc = replicated_model.evaluate(ds_test, steps=70)
+        eval_loss, eval_acc = replicated_model.evaluate(ds_test)
+        print('Eval loss: {}, Eval Accuracy: {}'.format(eval_loss, eval_acc))
+
+
+    if INFER:
+
+      # get the replicated_model from saved_model_dir
+      replicated_model = tf.keras.models.load_model(args.saved_model_dir)
+      print(f'model loaded successfully:- {replicated_model}')
+
+      x_test = np.load('x_test.npy')
+      y_test = np.load('y_test.npy')
+
+      x_test = x_test.astype("float32") / 255
+      x_test = np.expand_dims(x_test, -1)
+
+      test_dataset = tf.data.Dataset.from_tensor_slices(x_test)
+      test_dataset = test_dataset.take(2).batch(BATCH_SIZE)
+
+      print(f'predicting now...')
+      y_pred = replicated_model.predict(test_dataset)
+      print(f'type of y_pred: {type(y_pred)}')
+      print(f'y_pred shape: {y_pred.shape}')
+      print(f'y_pred:=\n{y_pred}')
+
+      
+      
+      
+
+    # Loading the model using lower level API
+    # with another_strategy.scope():
+    #   # loading model from args.saved_model_dir
+    #   # loaded_multi_worker_model = tf.keras.models.load_model(args.saved_model_dir)
+    #   # eval_loss, eval_acc = loaded_multi_worker_model.evaluate(ds_test)
+    #   # print('Eval loss: {}, Eval accuracy: {}'.format(eval_loss, eval_acc))
+
+    #   loaded = tf.saved_model.load(args.saved_model_dir)
+    #   inference_func = loaded.signatures[DEFAULT_FUNCTION_KEY]
+
+    #   dist_predict_dataset = another_strategy.experimental_distribute_dataset(ds_test)
+    #   # Calling the function in a distributed manner
+    #   for batch in dist_predict_dataset:
+    #     another_strategy.run(inference_func,args=(batch,))
+
+    print('code executed successfully!')
 
 
 if __name__ == '__main__':
-  # os.environ['NCCL_DEBUG'] = 'INFO'
-  tfds.disable_progress_bar()
+    # os.environ['NCCL_DEBUG'] = 'INFO'
+    tfds.disable_progress_bar()
 
-  # tf_config = {
-  #     'cluster': {
-  #         'worker': ['localhost:12345', 'localhost:23456']
-  #     },
-  #     'task': {'type': 'worker', 'index': 0}
-  # }
-  # os.environ['TF_CONFIG'] = json.dumps(tf_config)
+    # tf_config = {
+    #     'cluster': {
+    #         'worker': ['localhost:12345', 'localhost:23456']
+    #     },
+    #     'task': {'type': 'worker', 'index': 0}
+    # }
+    # os.environ['TF_CONFIG'] = json.dumps(tf_config)
 
+    # to decide if a worker is chief, get TASK_INDEX in Cluster info
+    tf_config = json.loads(os.environ.get('TF_CONFIG') or '{}')
+    print(f'tf_config:-\n{tf_config}')
+    # TASK_INDEX = tf_config['task']['index']
+    # TASK_TYPE = tf_config['task']['type']
 
-  # to decide if a worker is chief, get TASK_INDEX in Cluster info
-  tf_config = json.loads(os.environ.get('TF_CONFIG') or '{}')
-  print(f'tf_config:-\n{tf_config}')
-  TASK_INDEX = tf_config['task']['index']
-  TASK_TYPE = tf_config['task']['type']
+    TASK_TYPE = tf_config.get('task', {}).get('type', 'worker')
+    TASK_INDEX = tf_config.get('task', {}).get('index', 0)
 
+    if TASK_TYPE != 'chief' and not tf_config.get('cluster', {}).get('chief', []) and TASK_INDEX == 0:
+        TASK_TYPE = 'chief'
 
-  parser = argparse.ArgumentParser()
-  parser.add_argument('--saved_model_dir',
-                      type=str,
-                      required=True,
-                      help='Tensorflow export directory.')
+    TRAIN = True
+    EVAL = False
+    INFER = False
 
-  parser.add_argument('--checkpoint_dir',
-                      type=str,
-                      required=True,
-                      help='Tensorflow checkpoint directory.')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--saved_model_dir',
+                        type=str,
+                        required=True,
+                        help='Tensorflow export directory.')
 
-  parsed_args = parser.parse_args()
-  main(parsed_args)
+    parser.add_argument('--checkpoint_dir',
+                        type=str,
+                        required=True,
+                        help='Tensorflow checkpoint directory.')
+
+    parsed_args = parser.parse_args()
+    main(parsed_args)
